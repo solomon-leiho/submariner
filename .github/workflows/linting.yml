@@ -16,6 +16,8 @@ jobs:
         uses: actions/checkout@master
       - name: Run validation
         run: make codegen
+      - name: Make sure there's no pending changes
+        run: output=$(git status --porcelain) && [ -z "$output" ]
 
   dco:
     runs-on: ubuntu-latest

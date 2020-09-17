@@ -46,6 +46,7 @@ type EndpointSpec struct {
 	ClusterID     string            `json:"cluster_id"`
 	CableName     string            `json:"cable_name"`
 	Hostname      string            `json:"hostname"`
+	Hostname2     string            `json:"hostname2"`
 	Subnets       []string          `json:"subnets"`
 	PrivateIP     string            `json:"private_ip"`
 	PublicIP      string            `json:"public_ip"`

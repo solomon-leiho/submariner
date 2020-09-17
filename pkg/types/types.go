@@ -22,6 +22,7 @@ type SubmarinerSpecification struct {
 	CableDriver string
 	ClusterID   string
 	Namespace   string
+	Namespace2  string
 	Token       string
 	Debug       bool
 	NatEnabled  bool
