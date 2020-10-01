@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/kelseyhightower/envconfig"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/klog"
 
 	"github.com/submariner-io/admiral/pkg/log"
@@ -24,8 +27,19 @@ const (
 	cableDriverName = "libreswan"
 )
 
+// The metrics are gauges because we want to set the absolute value
+var libreswanRxGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "libreswan_rx_bytes",
+	Help: "Bytes received",
+})
+var libreswanTxGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "libreswan_tx_bytes",
+	Help: "Bytes transmitted",
+})
+
 func init() {
 	cable.AddDriver(cableDriverName, NewLibreswan)
+	prometheus.MustRegister(libreswanRxGauge, libreswanTxGauge)
 }
 
 type libreswan struct {
@@ -101,6 +115,9 @@ func (i *libreswan) Init() error {
 	return nil
 }
 
+// Line format: 006 #3: "submariner-cable-cluster3-172-17-0-8-0-0", type=ESP, add_time=1590508783, inBytes=0, outBytes=0, id='172.17.0.8'
+var trafficStatusRE = regexp.MustCompile(`.* "([^"]+)", .*inBytes=(\d+), outBytes=(\d+).*`)
+
 func (i *libreswan) refreshConnectionStatus() error {
 	// Retrieve active tunnels from the daemon
 	cmd := exec.Command("/usr/libexec/ipsec/whack", "--trafficstatus")
@@ -118,10 +135,23 @@ func (i *libreswan) refreshConnectionStatus() error {
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		// Line format: 006 #3: "submariner-cable-cluster3-172-17-0-8-0-0", type=ESP, add_time=1590508783, inBytes=0, outBytes=0, id='172.17.0.8'
-		components := strings.Split(line, "\"")
-		if len(components) == 3 {
-			activeConnections.Add(components[1])
+		matches := trafficStatusRE.FindStringSubmatch(line)
+		if matches != nil {
+			activeConnections.Add(matches[1])
+
+			inBytes, err := strconv.Atoi(matches[2])
+			if err != nil {
+				klog.V(log.DEBUG).Infof("Invalid inBytes in whack output line: %q", line)
+			} else {
+				libreswanRxGauge.Set(float64(inBytes))
+			}
+
+			outBytes, err := strconv.Atoi(matches[3])
+			if err != nil {
+				klog.V(log.DEBUG).Infof("Invalid outBytes in whack output line: %q", line)
+			} else {
+				libreswanTxGauge.Set(float64(outBytes))
+			}
 		} else {
 			klog.V(log.DEBUG).Infof("Ignoring whack output line: %q", line)
 		}
